@@ -1,19 +1,12 @@
 #include <iostream>
 #include <fstream>
 #include <cmath>
-
-/*
-
-PPM Format USED:
-
-P3                            # means colors are ascii
-[image_width] [image_height]  # cols / rows to parse
-[max_color_value]             # max value representing full color expression
-[r_value] [g_value] [b_value] # this triplet repeats [image_width * image_height] times to represent the final image
-
-*/
+#include <chrono>
+#include <iomanip>
 
 int main() {
+    auto start = std::chrono::high_resolution_clock::now();
+
     // Image dimensions
     int image_width = 256;
     int image_height = 256;
@@ -31,19 +24,30 @@ int main() {
 
     ppm_file << "P3\n" << image_width << ' ' << image_height << "\n" << max_color_value << "\n";
 
+    // Start processing the image
     for (int row = 0; row < image_height; row++) {
         for (int col = 0; col < image_width; col++) {
-            int ir = ((col / static_cast<int>(std::sqrt(256))) % 2 == (row / static_cast<int>(std::sqrt(256))) % 2) ? 255 : 0;
+            int ir = ((col / static_cast<int>(std::sqrt(256))) % 2 == 
+                      (row / static_cast<int>(std::sqrt(256))) % 2) ? 255 : 0;
             int ig = col;
             int ib = row;
 
             ppm_file << ir << ' ' << ig << ' ' << ib << '\n';
         }
+
+        // Log progress every row
+        std::cout << "Processed row " << std::setw(3) << row + 1 << " / " << image_height << "\r" << std::flush;
     }
 
     ppm_file.close();
 
-    std::cout << "Image saved as ppm_example.ppm\n";
+    // Measure the end time
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> duration = end - start;
+
+    // Final completion message
+    std::cout << "\nImage saved as " << filename << "\n";
+    std::cout << "Execution time: " << std::fixed << std::setprecision(2) << duration.count() << " ms\n";
 
     return 0;
 }
