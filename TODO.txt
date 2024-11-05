@@ -1,5 +1,5 @@
 TODO:
 
-Add comments everywhere and fully understand
 Play with AVX512 (and types!) and Parallelism
 Play with gcc flags and create benches to understand flag affects
+Denoising and interpolation?
