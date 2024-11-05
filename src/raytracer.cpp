@@ -1,88 +1,97 @@
-#include <algorithm>
-#include <chrono>
-#include <cmath>
-#include <iomanip>
-#include <iostream>
-#include <fstream>
+#include "rtweekend.hpp"
+#include "camera.hpp"
+#include "hittable.hpp"
+#include "hittable_list.hpp"
+#include "material.hpp"
+#include "sphere.hpp"
 
-#include "color.hpp"
-#include "ray.hpp"
-#include "vec3.hpp"
+int main(void) {
 
-#define MAX_COLOR_VALUE 255
-#define FILENAME "output/image.ppm"
+    /* SCENE OBJECTS */
 
-color ray_color(const ray& r) {
-    vec3 unit_direction = unit_vector(r.direction());
-    auto a = 0.5*(unit_direction.y() + 1.0);
-    return (1.0-a)*color(1.0, 1.0, 1.0) + a*color(0.5, 0.7, 1.0);
-}
+    // Create a list to store all objects (only spheres in our case) in the scene.
+    hittable_list scene_objects = {};
 
-int main() {
-    auto start = std::chrono::high_resolution_clock::now();
+    // Add a large ground sphere to represent the floor. Lambertian is the diffusion distribution method.
+    auto ground_material = make_shared<lambertian>(color(0.2, 0.2, 0.2)); // Diffuse dark gray material
+    scene_objects.add(make_shared<sphere>(point3(0, -1000, 0), 1000, ground_material)); // Large sphere as ground
 
-    // Open file stream to write the PPM file
-    std::ofstream ppm_file(FILENAME);
+    double large_sphere_radius = 1.0;
+    double small_sphere_radius = 0.2;
+    double possbile_interaction_radius = large_sphere_radius + small_sphere_radius;
 
-    // Check if the file is opened successfully
-    if (!ppm_file) {
-        std::cerr << "Error: Could not open the file \"" << FILENAME << "\" for writing.\n";
-        return 1;
-    }
+    // Large glass-like sphere
+    auto glass_material = make_shared<dielectric>(1.5);  
+    scene_objects.add(make_shared<sphere>(point3(0, 1, 0), large_sphere_radius, glass_material));  
 
-    // Image
-    double aspect_ratio = 16.0 / 9.0;
-    int image_width = 400;
+    // Large diffuse sphere
+    auto diffuse_material = make_shared<lambertian>(color(0.4, 0.2, 0.1));  
+    scene_objects.add(make_shared<sphere>(point3(-4, 1, 0), large_sphere_radius, diffuse_material));  
 
-    // Calculate the image height, and ensure that it's at least 1.
-    int image_height = int(image_width / aspect_ratio);
-    image_height = (image_height < 1) ? 1 : image_height;
+    // Large metal sphere
+    auto metal_material = make_shared<metal>(color(0.7, 0.6, 0.5), 0.0);  
+    scene_objects.add(make_shared<sphere>(point3(4, 1, 0), large_sphere_radius, metal_material));  
 
-    // Camera
-    double focal_length = 1.0;
-    double viewport_height = 2.0;
-    double viewport_width = viewport_height * (double(image_width)/image_height);
-    point3 camera_center = point3(0, 0, 0);
+    // Generate small spheres randomly scattered across the ground.
+    for (int x = -11; x < 11; x++) {
+        for (int z = -11; z < 11; z++) {
+            // Randomly choose a material for the current sphere.
+            double random_material_choice = random_double();
 
-    // Calculate the vectors across the horizontal and down the vertical viewport edges.
-    // * INLINE https://raytracing.github.io/images/fig-1.04-pixel-grid.jpg
-    vec3 viewport_u = vec3(viewport_width, 0, 0);
-    vec3 viewport_v = vec3(0, -viewport_height, 0);
-    
-    // Calculate the horizontal and vertical delta vectors from pixel to pixel.
-    vec3 pixel_delta_u = viewport_u / image_width;
-    vec3 pixel_delta_v = viewport_v / image_height;
+            // Generate a random position for the sphere, slightly offset from grid positions.
+            point3 sphere_center(x + 0.9 * random_double(), 0.2, z + 0.9 * random_double());
 
-    // Calculate the location of the upper left pixel.
-    point3 viewport_upper_left = camera_center - vec3(0, 0, focal_length) - viewport_u/2 - viewport_v/2;
-    point3 pixel00_loc = viewport_upper_left + 0.5 * (pixel_delta_u + pixel_delta_v);
+            // Ensure spheres don't overlap with the large spheres.
+            if ((sphere_center - point3(4, 1, 0)).length() > possbile_interaction_radius && (sphere_center - point3(0, 1, 0)).length() > possbile_interaction_radius && (sphere_center - point3(-4, 1, 0)).length() > possbile_interaction_radius) {
+                shared_ptr<material> sphere_material;
 
-    ppm_file << "P3\n" << image_width << ' ' << image_height << "\n" << MAX_COLOR_VALUE << "\n";
+                // Choose a diffuse material (30% probability).
+                if (random_material_choice < 0.3) {
+                    auto albedo = color::random() * color::random(); // Random color for diffuse reflection
+                    sphere_material = make_shared<lambertian>(albedo); // Diffuse material
+                    scene_objects.add(make_shared<sphere>(sphere_center, small_sphere_radius, sphere_material)); // Add sphere
 
-    // Start processing the image
-    for (int row = 0; row < image_height; row++) {
-        for (int col = 0; col < image_width; col++) {
-            auto pixel_center = pixel00_loc + (row * pixel_delta_u) + (col * pixel_delta_v);
-            auto ray_direction = pixel_center - camera_center;
-            ray r(camera_center, ray_direction);
+                // Choose a metal material (30% probability).
+                } else if (random_material_choice < 0.6) {
+                    auto albedo = color::random(0.5, 1); // Random metal color with some brightness
+                    double fuzziness = random_double(0, 0.5); // Fuzziness affects the reflection blur
+                    sphere_material = make_shared<metal>(albedo, fuzziness); // Metal material
+                    scene_objects.add(make_shared<sphere>(sphere_center, small_sphere_radius, sphere_material)); // Add sphere
 
-            color pixel_color = ray_color(r);
-            write_color(ppm_file, pixel_color);
+                // Choose a glass-like (dielectric) material (40% probability).
+                } else {
+                    sphere_material = make_shared<dielectric>(1.5); // Refractive index for glass-like material
+                    scene_objects.add(make_shared<sphere>(sphere_center, small_sphere_radius, sphere_material)); // Add sphere
+                }
+            }
         }
-
-        // Log progress every row
-        std::cout << "Processed row " << std::setw(3) << row + 1 << " / " << image_height << "\r" << std::flush;
     }
 
-    ppm_file.close();
+    /* CAMERA CONFIG */
 
-    // Measure the end time
-    auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double, std::milli> duration = end - start;
+    // Configure the camera.
+    camera scene_camera;
 
-    // Final completion message
-    std::cout << "\nImage saved as " << FILENAME << "\n";
-    std::cout << "Execution time: " << std::fixed << std::setprecision(2) << duration.count() << " ms\n";
+    // Set basic camera parameters.
+    scene_camera.aspect_ratio = 16.0 / 9.0; // Aspect ratio for widescreen rendering.
+    scene_camera.image_width = 720; // Image width in pixels.
+    scene_camera.samples_per_pixel = 10; // Samples per pixel for anti-aliasing.
+    scene_camera.max_depth = 25; // Maximum recursion depth for reflections/refractions.
+
+    // Set the camera's field of view and orientation.
+    scene_camera.vertical_fov = 20; // Vertical field of view in degrees.
+    scene_camera.camera_position = point3(13, 2, 3); // Camera position.
+    scene_camera.focus_point = point3(0, 0, 0); // Target point the camera is looking at.
+    scene_camera.up_direction = vec3(0, 1, 0); // Up direction for the camera (aligned with y-axis).
+
+    // Configure depth of field by setting focus and aperture.
+    scene_camera.lens_aperture = 0.2; // Aperture size affecting depth of field.
+    scene_camera.focus_distance = 10.0; // Distance at which the camera is focused.
+
+    /* RENDER SCENE */
+
+    // Render the scene using the configured camera and objects.
+    scene_camera.render(scene_objects);
 
     return 0;
 }
